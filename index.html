@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kiểm tra đơn hàng</title>
+    <title>Kiểm Tra Đơn Hàng & Tồn Kho</title>
     
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -234,14 +234,20 @@
             // Helper to filter lists based on search term
             const getFilteredList = (list) => {
                 if (!searchTerm) return list;
-                const term = searchTerm.toLowerCase();
-                return list.filter(o => o.id.toString().toLowerCase().includes(term));
+                
+                // CẬP NHẬT: Tự động xóa khoảng trắng (trim) và tìm theo cả ID đơn hàng HOẶC Mã Sản Phẩm
+                const term = searchTerm.trim().toLowerCase();
+                
+                return list.filter(o => 
+                    o.id.toString().toLowerCase().includes(term) || // Tìm theo ID Đơn
+                    o.items.some(item => item.sku.toLowerCase().includes(term)) // Tìm theo Mã Sản Phẩm trong đơn
+                );
             };
 
             return (
                 <div className="w-full max-w-[1600px] mx-auto p-4 md:p-6">
                     <header className="mb-8 text-center">
-                        <h1 className="text-3xl font-bold text-gray-800 mb-2">LỌC ĐƠN HÀNG - DEVELOPED BY HO TA VINH</h1>
+                        <h1 className="text-3xl font-bold text-gray-800 mb-2">KIỂM TRA ĐƠN HÀNG _ DEVELOPED BY HO TA VINH</h1>
                         <p className="text-gray-600">Phân loại: <span className="text-green-600 font-bold">IN NGAY</span> - <span className="text-yellow-600 font-bold">CẦN KIỂM TRA</span> - <span className="text-red-600 font-bold">THIẾU HÀNG</span></p>
                     </header>
 
@@ -300,7 +306,7 @@
                                 <input
                                     type="text"
                                     className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 sm:text-sm shadow-sm"
-                                    placeholder="Nhập ID đơn hàng để tìm kiếm nhanh..."
+                                    placeholder="Nhập ID đơn hàng hoặc Mã sản phẩm..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
@@ -362,9 +368,9 @@
                                 <div className="bg-yellow-50 p-4 border-b border-yellow-200 flex justify-between items-center shrink-0">
                                     <div>
                                         <h3 className="font-bold text-yellow-800 flex items-center gap-2 text-lg">
-                                            <WarningIcon /> CẦN KIỂM TRA LẠI ({getFilteredList(processedData.review).length})
+                                            <WarningIcon /> CẦN KIỂM TRA ({getFilteredList(processedData.review).length})
                                         </h3>
-                                        <p className="text-xs text-yellow-700 mt-1">Sản phẩm còn tồn trong kho nhưng có thể bán đang âm</p>
+                                        <p className="text-xs text-yellow-700 mt-1">Sản phẩm còn tồn nhưng có thể bán đang âm</p>
                                     </div>
                                     <button onClick={() => copyIds(getFilteredList(processedData.review), "Cần Review")} className="bg-white text-yellow-700 hover:bg-yellow-100 p-2 rounded border border-yellow-200" title="Copy ID đang hiển thị">
                                         <CopyIcon />
