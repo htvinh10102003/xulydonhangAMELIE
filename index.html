@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kiểm Tra Đơn Hàng & Tồn Kho</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- SheetJS (xlsx) để đọc file Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        .drop-zone { transition: all 0.3s ease; border: 2px dashed #cbd5e1; }
+        .drop-zone:hover, .drop-zone.active { border-color: #3b82f6; background-color: #eff6ff; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Icon components
+        const UploadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+        const CheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-500"><polyline points="20 6 9 17 4 12"/></svg>;
+        const AlertIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
+        const FileIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>;
+        const CopyIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
+
+        function App() {
+            const [products, setProducts] = useState({}); // Map: SKU -> Stock
+            const [productFileName, setProductFileName] = useState("");
+            
+            const [orders, setOrders] = useState([]); // List of processed orders
+            const [orderFileName, setOrderFileName] = useState("");
+            
+            const [processedData, setProcessedData] = useState(null);
+            const [loading, setLoading] = useState(false);
+
+            // Xử lý file Sản Phẩm
+            const handleProductUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setProductFileName(file.name);
+                
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const bstr = evt.target.result;
+                    const workbook = XLSX.read(bstr, { type: 'binary' });
+                    const sheetName = workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[sheetName];
+                    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // Array of arrays
+
+                    // Tìm vị trí cột
+                    const headerRow = data[0] || [];
+                    const skuIndex = headerRow.findIndex(h => h && h.toString().toLowerCase().includes("mã sản phẩm"));
+                    const stockIndex = headerRow.findIndex(h => h && h.toString().toLowerCase().includes("có thể bán"));
+
+                    if (skuIndex === -1 || stockIndex === -1) {
+                        alert("Không tìm thấy cột 'Mã sản phẩm' hoặc 'Có thể bán' trong file Sản phẩm.");
+                        return;
+                    }
+
+                    const productMap = {};
+                    // Bắt đầu từ dòng 1 (bỏ header)
+                    for (let i = 1; i < data.length; i++) {
+                        const row = data[i];
+                        if (row[skuIndex]) {
+                            const sku = row[skuIndex].toString().trim();
+                            const stock = parseInt(row[stockIndex]) || 0;
+                            productMap[sku] = stock;
+                        }
+                    }
+                    setProducts(productMap);
+                };
+                reader.readAsBinaryString(file);
+            };
+
+            // Xử lý file Đơn Hàng
+            const handleOrderUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setOrderFileName(file.name);
+
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const bstr = evt.target.result;
+                    const workbook = XLSX.read(bstr, { type: 'binary' });
+                    const sheetName = workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[sheetName];
+                    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                    // Tìm vị trí cột
+                    const headerRow = data[0] || [];
+                    const idIndex = headerRow.findIndex(h => h && h.toString().toLowerCase() === "id");
+                    const skuIndex = headerRow.findIndex(h => h && h.toString().toLowerCase().includes("mã sản phẩm"));
+                    const qtyIndex = headerRow.findIndex(h => h && h.toString().toLowerCase().includes("số lượng"));
+
+                    if (idIndex === -1 || skuIndex === -1 || qtyIndex === -1) {
+                        alert("Không tìm thấy cột 'ID', 'Mã sản phẩm' hoặc 'Số lượng' trong file Đơn hàng.");
+                        return;
+                    }
+
+                    const ordersMap = {};
+                    let currentOrderId = null;
+
+                    for (let i = 1; i < data.length; i++) {
+                        const row = data[i];
+                        
+                        // Logic Fill Down ID
+                        if (row[idIndex] && row[idIndex].toString().trim() !== "") {
+                            currentOrderId = row[idIndex].toString().trim();
+                        }
+
+                        // Nếu có mã sản phẩm (tức là dòng chứa sản phẩm)
+                        if (currentOrderId && row[skuIndex]) {
+                            const sku = row[skuIndex].toString().trim();
+                            const qty = parseInt(row[qtyIndex]) || 0;
+
+                            if (!ordersMap[currentOrderId]) {
+                                ordersMap[currentOrderId] = {
+                                    id: currentOrderId,
+                                    items: []
+                                };
+                            }
+                            ordersMap[currentOrderId].items.push({ sku, qty });
+                        }
+                    }
+                    setOrders(Object.values(ordersMap));
+                };
+                reader.readAsBinaryString(file);
+            };
+
+            // Chạy logic kiểm tra
+            const processOrders = () => {
+                if (Object.keys(products).length === 0) {
+                    alert("Vui lòng tải lên file Sản phẩm trước.");
+                    return;
+                }
+                if (orders.length === 0) {
+                    alert("Vui lòng tải lên file Đơn hàng.");
+                    return;
+                }
+
+                setLoading(true);
+                setTimeout(() => {
+                    const valid = [];
+                    const invalid = [];
+
+                    orders.forEach(order => {
+                        let isOrderValid = true;
+                        let invalidReasons = [];
+
+                        order.items.forEach(item => {
+                            const stockAvailable = products[item.sku];
+                            
+                            // Kiểm tra tồn tại
+                            if (stockAvailable === undefined) {
+                                isOrderValid = false;
+                                invalidReasons.push(`Mã ${item.sku}: Không tìm thấy trong kho.`);
+                            } else {
+                                // Kiểm tra số lượng: Tồn có thể bán >= Số lượng đặt
+                                if (stockAvailable < item.qty) {
+                                    isOrderValid = false;
+                                    invalidReasons.push(`Mã ${item.sku}: Cần ${item.qty}, Kho còn ${stockAvailable}`);
+                                } else if (stockAvailable < 0) {
+                                     // Trường hợp tồn kho âm (dữ liệu sai)
+                                    isOrderValid = false;
+                                    invalidReasons.push(`Mã ${item.sku}: Kho bị âm (${stockAvailable})`);
+                                }
+                            }
+                        });
+
+                        if (isOrderValid) {
+                            valid.push(order);
+                        } else {
+                            invalid.push({ ...order, reasons: invalidReasons });
+                        }
+                    });
+
+                    setProcessedData({ valid, invalid });
+                    setLoading(false);
+                }, 500);
+            };
+
+            const copyValidIds = () => {
+                if (!processedData) return;
+                const ids = processedData.valid.map(o => o.id).join("\n");
+                navigator.clipboard.writeText(ids);
+                alert("Đã sao chép " + processedData.valid.length + " ID đơn hàng vào bộ nhớ tạm!");
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto p-6">
+                    <header className="mb-8 text-center">
+                        <h1 className="text-3xl font-bold text-gray-800 mb-2">Công Cụ Lọc Đơn Hàng Đủ Tồn Kho</h1>
+                        <p className="text-gray-600">Đối chiếu file "Sản phẩm" và file "Đơn hàng" (hỗ trợ merged cells)</p>
+                    </header>
+
+                    <div className="grid md:grid-cols-2 gap-6 mb-8">
+                        {/* Khu vực Upload Sản phẩm */}
+                        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-blue-600">
+                                <FileIcon /> 1. File Sản phẩm (Tồn kho)
+                            </h2>
+                            <div className="relative">
+                                <input 
+                                    type="file" 
+                                    accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                                    onChange={handleProductUpload}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                />
+                                <div className={`drop-zone p-8 rounded-lg flex flex-col items-center justify-center text-center ${productFileName ? 'border-green-400 bg-green-50' : ''}`}>
+                                    <UploadIcon />
+                                    <span className="mt-2 text-sm font-medium text-gray-600">
+                                        {productFileName ? productFileName : "Kéo thả hoặc chọn file Excel"}
+                                    </span>
+                                    {Object.keys(products).length > 0 && (
+                                        <span className="text-xs text-green-600 mt-1">Đã tải {Object.keys(products).length} mã sản phẩm</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Khu vực Upload Đơn hàng */}
+                        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-purple-600">
+                                <FileIcon /> 2. File Đơn hàng
+                            </h2>
+                            <div className="relative">
+                                <input 
+                                    type="file" 
+                                    accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                                    onChange={handleOrderUpload}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                />
+                                <div className={`drop-zone p-8 rounded-lg flex flex-col items-center justify-center text-center ${orderFileName ? 'border-green-400 bg-green-50' : ''}`}>
+                                    <UploadIcon />
+                                    <span className="mt-2 text-sm font-medium text-gray-600">
+                                        {orderFileName ? orderFileName : "Kéo thả hoặc chọn file Excel"}
+                                    </span>
+                                    {orders.length > 0 && (
+                                        <span className="text-xs text-green-600 mt-1">Đã tải {orders.length} đơn hàng</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="text-center mb-8">
+                        <button 
+                            onClick={processOrders}
+                            disabled={!orders.length || !Object.keys(products).length}
+                            className={`px-8 py-3 rounded-full font-bold text-white shadow-lg transition-transform transform hover:scale-105 ${(!orders.length || !Object.keys(products).length) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                        >
+                            {loading ? "Đang xử lý..." : "Xử Lý & Lọc Đơn"}
+                        </button>
+                    </div>
+
+                    {processedData && (
+                        <div className="grid md:grid-cols-2 gap-8">
+                            {/* Cột Đơn Thành Công */}
+                            <div className="bg-white rounded-lg shadow border border-green-100 overflow-hidden">
+                                <div className="bg-green-50 p-4 border-b border-green-100 flex justify-between items-center">
+                                    <h3 className="font-bold text-green-800 flex items-center gap-2">
+                                        <CheckIcon /> Đủ Điều Kiện ({processedData.valid.length})
+                                    </h3>
+                                    <button 
+                                        onClick={copyValidIds}
+                                        className="text-xs bg-white border border-green-200 text-green-700 hover:bg-green-100 px-3 py-1 rounded flex items-center gap-1"
+                                    >
+                                        <CopyIcon /> Copy tất cả ID
+                                    </button>
+                                </div>
+                                <div className="p-0 max-h-[500px] overflow-y-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0">
+                                            <tr>
+                                                <th className="px-4 py-2">ID Đơn</th>
+                                                <th className="px-4 py-2 text-right">Số SP</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {processedData.valid.map((order, idx) => (
+                                                <tr key={idx} className="border-b hover:bg-gray-50">
+                                                    <td className="px-4 py-2 font-medium text-gray-900">{order.id}</td>
+                                                    <td className="px-4 py-2 text-right">{order.items.length}</td>
+                                                </tr>
+                                            ))}
+                                            {processedData.valid.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="2" className="px-4 py-4 text-center text-gray-500">Không có đơn nào đủ điều kiện.</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            {/* Cột Đơn Thất Bại */}
+                            <div className="bg-white rounded-lg shadow border border-red-100 overflow-hidden">
+                                <div className="bg-red-50 p-4 border-b border-red-100">
+                                    <h3 className="font-bold text-red-800 flex items-center gap-2">
+                                        <AlertIcon /> Thiếu Hàng / Lỗi ({processedData.invalid.length})
+                                    </h3>
+                                </div>
+                                <div className="p-0 max-h-[500px] overflow-y-auto">
+                                     <table className="w-full text-sm text-left">
+                                        <thead className="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0">
+                                            <tr>
+                                                <th className="px-4 py-2">ID Đơn</th>
+                                                <th className="px-4 py-2">Lý do</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {processedData.invalid.map((order, idx) => (
+                                                <tr key={idx} className="border-b hover:bg-gray-50 align-top">
+                                                    <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">{order.id}</td>
+                                                    <td className="px-4 py-2 text-red-600 text-xs">
+                                                        <ul className="list-disc list-inside">
+                                                            {order.reasons.map((r, i) => (
+                                                                <li key={i}>{r}</li>
+                                                            ))}
+                                                        </ul>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                             {processedData.invalid.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="2" className="px-4 py-4 text-center text-gray-500">Tất cả đơn đều đủ hàng!</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
